@@ -121,6 +121,18 @@ def queue():
     return {"pending": len(items), "items": items}
 
 
+@app.post("/clear-queue")
+def clear_queue():
+    """Delete all pending entries from the queue."""
+    import sqlite3
+    conn = sqlite3.connect("audit.db")
+    c = conn.cursor()
+    c.execute("DELETE FROM audit_log WHERE reviewer_action = 'pending'")
+    conn.commit()
+    conn.close()
+    return {"message": "Queue cleared"}
+
+
 @app.post("/approve/{entry_id}")
 def approve(entry_id: str, body: ApproveRequest = None):
     entry = get_entry_by_id(entry_id)

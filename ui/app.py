@@ -5,6 +5,7 @@
 import streamlit as st
 import requests
 import json
+from datetime import datetime
 
 API_BASE = "http://localhost:8000"
 
@@ -15,6 +16,19 @@ st.title("🔄 Stale Content Refresh Agent")
 if "processing" not in st.session_state:
     st.session_state.processing = False
 
+
+def format_date(date_str: str) -> str:
+    """Convert AEM date string to human readable format with days ago."""
+    try:
+        # Handle format: Mon Jul 13 2026 20:21:07 GMT-0600
+        clean = date_str.split(" GMT")[0]
+        dt = datetime.strptime(clean, "%a %b %d %Y %H:%M:%S")
+        delta = datetime.now() - dt
+        days = delta.days
+        formatted = dt.strftime("%b %d, %Y")
+        return f"{formatted} ({days} days ago)"
+    except:
+        return date_str
 
 def fetch_queue():
     try:
@@ -46,28 +60,45 @@ def trigger_scan():
 with st.sidebar:
     st.header("⚙️ Controls")
 
-    if st.button("🔍 Run Scan", use_container_width=True):
-        with st.spinner("Scanning AEM for stale pages..."):
+    if st.button("🔍 Run Scan", use_container_width=True, type="primary"):
+        with st.spinner("🔍 Scanning AEM for stale pages..."):
             result = trigger_scan()
-        if "error" in result:
-            st.error(result["error"])
-        elif result.get("processed", 0) == 0:
-            st.warning("No stale pages found. Try increasing STALE_THRESHOLD_DAYS.")
-        else:
-            st.success(f"✅ Processed: {result.get('processed', 0)} | Skipped: {result.get('skipped', 0)}")
+        st.session_state["last_scan_result"] = result
         st.rerun()
 
+    # Show scan result persistently after rerun
+    if "last_scan_result" in st.session_state:
+        result = st.session_state["last_scan_result"]
+        if "error" in result:
+            st.error(f"❌ Scan failed: {result['error']}")
+        elif result.get("processed", 0) == 0:
+            st.warning("⚠️ No stale pages found.")
+        else:
+            st.success(f"✅ Found {result.get('processed', 0)} stale pages!")
+            if result.get("skipped", 0) > 0:
+                st.warning(f"⚠️ Skipped {result.get('skipped', 0)} pages.")
+
     st.divider()
-    st.caption("Models")
+
+    if st.button("🗑️ Clear Queue", use_container_width=True):
+        try:
+            r = requests.post(f"{API_BASE}/clear-queue")
+            st.success("Queue cleared!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Failed: {e}")
+
+    st.divider()
+    st.caption("**Models**")
     st.caption("🧠 Reasoning: qwen-plus")
     st.caption("✍️ Generation: qwen-max")
 
     try:
         health = requests.get(f"{API_BASE}/health").json()
         st.divider()
-        st.caption("Token Usage")
-        st.caption(f"Input:  {health['tokens_used']['input']}")
-        st.caption(f"Output: {health['tokens_used']['output']}")
+        st.caption("**Token Usage**")
+        st.caption(f"Input:  {health['tokens_used']['input']:,}")
+        st.caption(f"Output: {health['tokens_used']['output']:,}")
     except:
         pass
 
@@ -100,7 +131,7 @@ with tab1:
         jcr_content = jcr_tree.get("jcr:content", {})
         last_modified = jcr_content.get("cq:lastModified", "unknown")
 
-        with st.expander(f"📄 {path}  |  Last modified: {last_modified}", expanded=True):
+        with st.expander(f"📄 {path}  |  Last modified: {format_date(last_modified)}", expanded=True):
 
             # Staleness reasoning
             st.markdown("**🧠 Why it's stale:**")
@@ -170,14 +201,14 @@ with tab1:
             col_approve, col_edit, col_reject = st.columns(3)
 
             with col_approve:
-                if st.button("✅ Approve", key=f"approve_{entry_id}", use_container_width=True):
+                if st.button("✅ Approve", key=f"approve_{entry_id}", use_container_width=True, type="primary"):
                     with st.spinner("Writing to JCR..."):
                         r = requests.post(f"{API_BASE}/approve/{entry_id}", json={})
                     if r.status_code == 200:
-                        st.success("Approved!")
+                        st.success("✅ Content updated in AEM!")
                         st.rerun()
                     else:
-                        st.error(f"Failed to approve: {r.text}")
+                        st.error(f"❌ Failed: {r.text}")
 
             with col_edit:
                 if st.button("✏️ Edit + Approve", key=f"edit_{entry_id}", use_container_width=True):
@@ -338,15 +369,28 @@ with tab2:
         with st.expander(f"{icon} {item['page_path']}  |  {timestamp}"):
             st.caption(f"Action: {action}")
             if item.get("reviewer_edits"):
-                st.caption(f"Edits: {item['reviewer_edits']}")
+                try:
+                    edits = json.loads(item["reviewer_edits"]) if isinstance(item["reviewer_edits"], str) else item["reviewer_edits"]
+                    if isinstance(edits, dict) and "jcr_tree" in edits:
+                        # Extract just the title from edited jcr_tree
+                        edited_title = edits.get("jcr_tree", {}).get("jcr:content", {}).get("jcr:title", "")
+                        if edited_title:
+                            st.caption(f"✏️ Reviewer edited title to: **{edited_title}**")
+                    else:
+                        st.caption(f"✏️ Reviewer notes: {item['reviewer_edits']}")
+                except:
+                    st.caption(f"✏️ Edited by reviewer")
 
             # New shape: refreshed is { path, jcr_tree }
             refreshed = item["refreshed_content"]
             refreshed_tree = refreshed.get("jcr_tree", {}) if isinstance(refreshed, dict) else {}
             refreshed_jcr = refreshed_tree.get("jcr:content", {})
 
-            st.markdown(f"**Title:** {refreshed_jcr.get('jcr:title', '') or 'not set'}")
-            st.markdown(f"**Description:** {refreshed_jcr.get('jcr:description', '') or 'not set'}")
+            title = refreshed_jcr.get("jcr:title", "")
+            if title:
+                st.markdown(f"**Title:** {title}")
+            else:
+                st.caption("No title change recorded.")
 
             # Rollback — only for approved entries not yet rolled back
             if action == "approved" and not item.get("rolled_back"):
