@@ -4,6 +4,12 @@
 # Uses OpenAI-compatible endpoint to call:
 #   - qwen-plus  → reasoning (staleness analysis)
 #   - qwen-max   → generation (content refresh)
+#
+# Alibaba Cloud MaaS endpoint:
+#   https://ws-4y9x7wmogrihylwu.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+#
+# API key configured via ALIBABA_API_KEY environment variable
+# Base URL configured via ALIBABA_BASE_URL environment variable
 
 import os
 import json
