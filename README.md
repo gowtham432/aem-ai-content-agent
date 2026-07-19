@@ -4,8 +4,6 @@
 
 ### 1. AEM SDK
 
-Download from [Adobe Software Distribution](https://experience.adobe.com/#/downloads) (Adobe account required).
-
 For local AEM instance setup and startup instructions, see [docs/AEM_SETUP.md](docs/AEM_SETUP.md).
 
 
