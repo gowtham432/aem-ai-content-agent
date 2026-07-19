@@ -18,8 +18,7 @@ AEM_CONTENT_PATH = os.getenv("AEM_CONTENT_PATH", "/content/myaemproject")
 
 
 def get_threshold_timestamp() -> str:
-    """During dev/testing use tomorrow as cutoff to catch all pages."""
-    cutoff = datetime.now() + timedelta(days=1)
+    cutoff = datetime.now() - timedelta(days=STALE_THRESHOLD_DAYS)
     return cutoff.strftime("%Y-%m-%dT%H:%M:%S.000+00:00")
 
 def scan_stale_pages() -> list[dict]:
